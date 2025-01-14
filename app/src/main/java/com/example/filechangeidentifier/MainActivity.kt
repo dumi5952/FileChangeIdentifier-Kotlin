@@ -17,6 +17,9 @@ import androidx.core.content.ContextCompat
 import com.example.filechangeidentifier.WebDAVUploader.deleteFileFromWebDAV
 import com.example.filechangeidentifier.WebDAVUploader.sendFileToWebDAV
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.OutputStreamWriter
 
 class MainActivity : AppCompatActivity() {
 
@@ -25,8 +28,31 @@ class MainActivity : AppCompatActivity() {
     private lateinit var listView: ListView
     private lateinit var adapter: ArrayAdapter<String>
     private val fileChangeList = mutableListOf<String>()
-    private val loggedFiles = mutableSetOf<String>() // To avoid duplicate logs
+    private lateinit var switchMonitoring: Switch
+    private val logFilePath: File
 
+    init {
+        // Define the path for the "Logs" folder inside the Downloads directory
+        val downloadFolder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val logsFolder = File(downloadFolder, "Logs") // Create "Logs" folder inside Downloads
+
+        // Check if the folder exists, if not, create it
+        if (!logsFolder.exists()) {
+            logsFolder.mkdirs() // Create the folder if it does not exist
+        }
+
+        // Define the log file inside the "Logs" folder
+        logFilePath = File(logsFolder, "log_file.txt")
+
+        // Check if the log file exists, if not, create it
+        if (!logFilePath.exists()) {
+            try {
+                logFilePath.createNewFile() // Create the log file if it does not exist
+            } catch (e: IOException) {
+                e.printStackTrace() // Handle the error if file creation fails
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,82 +63,23 @@ class MainActivity : AppCompatActivity() {
         adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, fileChangeList)
         listView.adapter = adapter
 
-        // Set up button for backup action
-        findViewById<Button>(R.id.button2).setOnClickListener {
-            Thread {
-                try {
-                    val tempDir = File(cacheDir, "tempFiles")
-                    if (!tempDir.exists()) tempDir.mkdirs()
+        // Initialize Switch
+        switchMonitoring = findViewById(R.id.switchMonitor)
 
-                    val iterator = fileChangeList.iterator()
-                    while (iterator.hasNext()) {
-                        val filePath = iterator.next()
-                        val actionType = filePath.split("-")[0]
-                        val fileName = filePath.split(": ").last()
-                        val originalFile = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), fileName)
-                        if(actionType == "2" || actionType == "3"){
-                            deleteFileFromWebDAV("${fileName}.enc",
-                                // delete encripted File
-                                 onSuccess = {
-                                    // Remove the file from the list and update the ListView
-                                    runOnUiThread {
-                                        iterator.remove() // Remove the item from the iterator
-                                        adapter.notifyDataSetChanged() // Notify adapter about changes
-                                        Toast.makeText(this,"File removed!", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                    onError = { error ->
-                                        // Show error message
-                                        runOnUiThread {
-                                            Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                )
-                        } else if (originalFile.exists()) {
-                            val tempFile = File(tempDir, originalFile.name)
-                            originalFile.copyTo(tempFile, overwrite = true)
-
-                            // Encrypt the file
-                            val encryptedFile = File(tempDir, "${originalFile.name}.enc")
-                            val secretKey = FileEncryptor.generateKey() // Generate or retrieve the key
-                            FileEncryptor.encryptFile(tempFile, encryptedFile, secretKey)
-
-                            // Send the encrypted file to the WebDAV server
-                            sendFileToWebDAV(encryptedFile, onSuccess = {
-                                // Remove the file from the list and update the ListView
-                                runOnUiThread {
-                                    iterator.remove() // Remove the item from the iterator
-                                    adapter.notifyDataSetChanged() // Notify adapter about changes
-                                    Toast.makeText(this,"File Uploaded!", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                                onError = { error ->
-                                    // Show error message
-                                    runOnUiThread {
-                                        Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            )
-                        } else {
-                            iterator.remove() // Remove the item from the iterator
-                        }
-                    }
-
-                    runOnUiThread {
-                        Toast.makeText(this, "All files processed!", Toast.LENGTH_SHORT).show()
-                    }
-                } catch (e: Exception) {
-                    runOnUiThread {
-                        Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                    }
-                }
-            }.start()
+        // Set Switch listener to enable/disable file monitoring
+        switchMonitoring.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                // Enable file monitoring
+                monitorFileChanges()
+            } else {
+                // Disable file monitoring
+                stopMonitoring()
+            }
         }
 
-        // Check permissions and monitor file changes
+        // Check permissions and monitor file changes if enabled
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (Environment.isExternalStorageManager()) {
-                monitorFileChanges()
                 Toast.makeText(this, "Permission granted", Toast.LENGTH_SHORT).show()
             } else {
                 requestManageExternalStoragePermission()
@@ -153,7 +120,6 @@ class MainActivity : AppCompatActivity() {
         startActivityForResult(intent, requestCode)
     }
 
-
     private fun monitorFileChanges() {
         val pathToMonitor =
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath
@@ -190,6 +156,17 @@ class MainActivity : AppCompatActivity() {
                     change?.let {
                         logFileChange(it)
                         eventTimestamps[fullPath] = currentTime // Update the event timestamp
+
+                        // Perform file upload actions on create/modify
+                        if (event == CREATE || event == MODIFY) {
+                            val fileName = path.split("/").last() // Extract file name
+                            val originalFile = File(pathToMonitor, path)
+
+                            if (originalFile.exists()) {
+                                // Process file: Encrypt and Upload
+                                processAndUploadFile(originalFile)
+                            }
+                        }
                     }
                 }
             }
@@ -199,12 +176,53 @@ class MainActivity : AppCompatActivity() {
         sourceTextChange("Started monitoring: $pathToMonitor")
     }
 
+    private fun stopMonitoring() {
+        if (::fileObserver.isInitialized) {
+            fileObserver.stopWatching()
+            sourceTextChange("Stopped monitoring")
+        }
+    }
 
+    private fun processAndUploadFile(originalFile: File) {
+        Thread {
+            try {
+                val tempDir = File(cacheDir, "tempFiles")
+                if (!tempDir.exists()) tempDir.mkdirs()
+
+                val tempFile = File(tempDir, originalFile.name)
+                originalFile.copyTo(tempFile, overwrite = true)
+
+                // Encrypt the file
+                val encryptedFile = File(tempDir, "${originalFile.name}.enc")
+                val secretKey = FileEncryptor.generateKey() // Generate or retrieve the key
+                FileEncryptor.encryptFile(tempFile, encryptedFile, secretKey)
+
+                // Send the encrypted file to the WebDAV server
+                sendFileToWebDAV(encryptedFile, onSuccess = {
+                    // File uploaded successfully, update list
+                    runOnUiThread {
+                        logFileChange("File uploaded: ${originalFile.name}")
+                    }
+                },
+                    onError = { error ->
+                        runOnUiThread {
+                            Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
 
     private fun logFileChange(message: String) {
         Log.d("FileObserver", message)
         runOnUiThread {
             fileChangeList.add(message)
+            writeToLogFile(message)
             adapter.notifyDataSetChanged()
         }
     }
@@ -216,6 +234,35 @@ class MainActivity : AppCompatActivity() {
         // Update the text value dynamically
         textViewSource.text = message
     }
+
+
+    // Write log messages to the log file
+    private fun writeToLogFile(message: String) {
+        try {
+            // Format the log message with timestamp
+            val logMessage = "${System.currentTimeMillis()} - $message\n"
+
+            // Open the log file in append mode (so that previous logs are preserved)
+            val outputStream = FileOutputStream(logFilePath, true)
+            val writer = OutputStreamWriter(outputStream)
+            writer.append(logMessage)
+            writer.close()
+        } catch (e: IOException) {
+            e.printStackTrace()  // Handle any errors while writing to the file
+        }
+    }
+
+    // Manage log file size (optional)
+    private fun manageLogFileSize() {
+        val maxLogFileSize = 5 * 1024 * 1024  // 5 MB (adjust as needed)
+        if (logFilePath.exists() && logFilePath.length() > maxLogFileSize) {
+            // Archive or delete the old log file
+            logFilePath.delete()
+            // Optionally, create a new log file
+            writeToLogFile("Log file exceeded max size, started new log.")
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         if (::fileObserver.isInitialized) {

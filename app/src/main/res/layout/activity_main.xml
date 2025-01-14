@@ -1,43 +1,84 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <LinearLayout
+    <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical"
         android:padding="16dp">
 
-        <TextView
-            android:id="@+id/fileChangesTextView"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="File changes will be displayed here"
-            android:textSize="16sp" />
+            android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/textViewSource"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Source Not Defined" />
+            <!-- Monitoring Switch -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingBottom="16dp">
 
-        <ListView
-            android:id="@+id/listView"
-            android:layout_width="match_parent"
-            android:layout_height="274dp"
-            android:layout_weight="1" />
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Enable Monitoring"
+                    android:textSize="16sp"
+                    android:gravity="center_vertical" />
 
-        <Button
-            android:id="@+id/button2"
-            android:layout_width="match_parent"
-            android:layout_height="79dp"
-            android:text="Backup"
-            android:tooltipText="Backup above file"/>
+                <Switch
+                    android:id="@+id/switchMonitor"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="false" />
+            </LinearLayout>
 
-    </LinearLayout>
+            <!-- File Changes Header -->
+            <TextView
+                android:id="@+id/fileChangesTextView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="File changes will be displayed here:"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:paddingBottom="8dp" />
+
+            <!-- Monitoring Source Text -->
+            <TextView
+                android:id="@+id/textViewSource"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Source: Not Defined"
+                android:textSize="16sp"
+                android:paddingBottom="8dp"
+                android:textColor="@android:color/holo_blue_dark" />
+
+            <!-- ListView to display file changes -->
+            <ListView
+                android:id="@+id/listView"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:divider="@android:color/darker_gray"
+                android:dividerHeight="1dp"
+                android:paddingBottom="16dp" />
+
+            <!-- Backup Button -->
+<!--            <Button-->
+<!--                android:id="@+id/button2"-->
+<!--                android:layout_width="match_parent"-->
+<!--                android:layout_height="wrap_content"-->
+<!--                android:text="Backup Selected File(s)"-->
+<!--                android:tooltipText="Trigger manual backup for selected files" />-->
+
+        </LinearLayout>
+
+    </ScrollView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

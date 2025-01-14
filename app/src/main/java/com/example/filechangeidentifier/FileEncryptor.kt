@@ -1,6 +1,7 @@
 package com.example.filechangeidentifier
 
 import java.io.File
+import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -10,9 +11,10 @@ object FileEncryptor {
     private const val ALGORITHM = "AES"
 
     fun generateKey(): SecretKey {
-        val keyGen = KeyGenerator.getInstance(ALGORITHM)
-        keyGen.init(256) // AES-256 encryption
-        return keyGen.generateKey()
+        val decodedKey = Base64.getDecoder().decode(SECURITY_KEY)
+
+        // Create the SecretKey using the decoded bytes
+        return SecretKeySpec(decodedKey, "AES")
     }
 
     fun encryptFile(inputFile: File, outputFile: File, secretKey: SecretKey) {
