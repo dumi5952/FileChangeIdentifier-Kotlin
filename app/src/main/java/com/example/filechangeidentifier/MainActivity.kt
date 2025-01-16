@@ -159,16 +159,17 @@ class MainActivity : AppCompatActivity() {
                         logFileChange(it)
                         eventTimestamps[fullPath] = currentTime // Update the event timestamp
                         val fileName = path.split("/").last()
+
                         // Perform file upload actions on create/modify
                         if (event == CREATE || event == MODIFY) {
-                             // Extract file name
+                            // Extract file name
                             val originalFile = File(pathToMonitor, path)
 
                             if (originalFile.exists()) {
-                                // Process file: Encrypt and Upload
-                                processAndUploadFile(originalFile)
+                                // Ensure the file is fully written before proceeding
+                                checkFileCompletionAndUpload(originalFile)
                             }
-                        } else if (event == DELETE || event == MOVED_TO){
+                        } else if (event == DELETE || event == MOVED_TO) {
                             processAndDeleteFile(fileName)
                         }
                     }
@@ -180,6 +181,45 @@ class MainActivity : AppCompatActivity() {
         sourceTextChange("Started monitoring: $pathToMonitor")
     }
 
+    private fun checkFileCompletionAndUpload(originalFile: File) {
+        // Give the file some time to finish writing (debounce or wait a few seconds)
+        Thread {
+            try {
+                // Wait for a brief period to ensure file is fully written (e.g., 2 seconds)
+                Thread.sleep(2000)
+
+                // Check if the file size has stopped increasing or is not 0 bytes
+                val initialSize = originalFile.length()
+
+                // Wait until the file size remains constant for a small period, indicating the file is stable
+                var currentSize: Long
+                var retries = 5
+                while (retries > 0) {
+                    Thread.sleep(1000) // Wait 1 second before checking again
+                    currentSize = originalFile.length()
+
+                    if (currentSize == initialSize) {
+                        // File size is stable, proceed to upload
+                        if (currentSize > 0) {
+                            processAndUploadFile(originalFile)
+                        }
+                        break
+                    }
+                    retries--
+                }
+
+                // If the file is still empty after retries, log a warning
+                if (retries == 0) {
+                    runOnUiThread {
+                        Toast.makeText(this, "File is empty or not yet fully written.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: InterruptedException) {
+                e.printStackTrace()
+            }
+        }.start()
+    }
+    
     private fun stopMonitoring() {
         if (::fileObserver.isInitialized) {
             fileObserver.stopWatching()
@@ -190,6 +230,27 @@ class MainActivity : AppCompatActivity() {
     private fun processAndUploadFile(originalFile: File) {
         Thread {
             try {
+                // Check if the original file exists before proceeding
+                if (!originalFile.exists()) {
+                    Log.e("FileUpload", "Original file does not exist at path: ${originalFile.path}")
+                    runOnUiThread {
+                        Toast.makeText(this, "Original file does not exist!", Toast.LENGTH_SHORT).show()
+                    }
+                    return@Thread
+                }
+
+                // Log the file size
+                Log.d("FileUpload", "Original file size: ${originalFile.length()} bytes")
+
+                // Proceed only if the original file size is greater than 0
+                if (originalFile.length() == 0L) {
+                    Log.e("FileUpload", "Original file size is 0 bytes.")
+                    runOnUiThread {
+                        Toast.makeText(this, "Original file is empty!", Toast.LENGTH_SHORT).show()
+                    }
+                    return@Thread
+                }
+
                 val tempDir = File(cacheDir, "tempFiles")
                 if (!tempDir.exists()) tempDir.mkdirs()
 
@@ -200,6 +261,9 @@ class MainActivity : AppCompatActivity() {
                 val encryptedFile = File(tempDir, "${originalFile.name}.enc")
                 val secretKey = FileEncryptor.generateKey() // Generate or retrieve the key
                 FileEncryptor.encryptFile(tempFile, encryptedFile, secretKey)
+
+                // Log sizes before upload
+                Log.d("FileUpload", "Encrypted file size: ${encryptedFile.length()} bytes")
 
                 // Send the encrypted file to the WebDAV server
                 sendFileToWebDAV(encryptedFile, onSuccess = {
@@ -212,8 +276,7 @@ class MainActivity : AppCompatActivity() {
                         runOnUiThread {
                             Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
                         }
-                    }
-                )
+                    })
             } catch (e: Exception) {
                 runOnUiThread {
                     Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
@@ -222,6 +285,7 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+
     private fun processAndDeleteFile(fileName: String) {
         Thread {
             try {
@@ -229,7 +293,7 @@ class MainActivity : AppCompatActivity() {
                 deleteFileFromWebDAV("${fileName}.enc", onSuccess = {
                     // File delete successfully, update list
                     runOnUiThread {
-                        logFileChange("File delete: $fileName")
+                        logFileChange("File deleted: $fileName")
                     }
                 },
                     onError = { error ->
@@ -280,7 +344,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Manage log file size (optional)
+
+   // Manage log file size (optional)
     private fun manageLogFileSize() {
         val maxLogFileSize = 5 * 1024 * 1024  // 5 MB (adjust as needed)
         if (logFilePath.exists() && logFilePath.length() > maxLogFileSize) {
