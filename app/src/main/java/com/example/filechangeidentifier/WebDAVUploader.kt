@@ -8,6 +8,28 @@ import java.io.File
 import java.io.IOException
 
 object WebDAVUploader {
+
+    fun checkServerReachability() {
+        val client = OkHttpClient()
+        val request = Request.Builder()
+            .url("https://webdav.innovizion.tech")
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e("WebDAV", "Server unreachable: ${e.message}")
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                if (response.isSuccessful) {
+                    Log.d("WebDAV", "Server reachable")
+                } else {
+                    Log.e("WebDAV", "Server not reachable: ${response.code}")
+                }
+            }
+        })
+    }
+
     fun sendFileToWebDAV(file: File, onSuccess: () -> Unit, onError: (String) -> Unit) {
         val url = "$SERVER_URL/upload/${file.name}" // Replace "upload" if the path is different
 

@@ -93,6 +93,8 @@ class MainActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (Environment.isExternalStorageManager()) {
+                switchMonitoring = findViewById(R.id.switchMonitor)
+                switchMonitoring.isChecked = true
                 monitorFileChanges()
                 Toast.makeText(this, "Permission granted", Toast.LENGTH_SHORT).show()
             } else {
@@ -156,16 +158,18 @@ class MainActivity : AppCompatActivity() {
                     change?.let {
                         logFileChange(it)
                         eventTimestamps[fullPath] = currentTime // Update the event timestamp
-
+                        val fileName = path.split("/").last()
                         // Perform file upload actions on create/modify
                         if (event == CREATE || event == MODIFY) {
-                            val fileName = path.split("/").last() // Extract file name
+                             // Extract file name
                             val originalFile = File(pathToMonitor, path)
 
                             if (originalFile.exists()) {
                                 // Process file: Encrypt and Upload
                                 processAndUploadFile(originalFile)
                             }
+                        } else if (event == DELETE || event == MOVED_TO){
+                            processAndDeleteFile(fileName)
                         }
                     }
                 }
@@ -202,6 +206,30 @@ class MainActivity : AppCompatActivity() {
                     // File uploaded successfully, update list
                     runOnUiThread {
                         logFileChange("File uploaded: ${originalFile.name}")
+                    }
+                },
+                    onError = { error ->
+                        runOnUiThread {
+                            Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun processAndDeleteFile(fileName: String) {
+        Thread {
+            try {
+                // delete the backup file to the WebDAV server
+                deleteFileFromWebDAV("${fileName}.enc", onSuccess = {
+                    // File delete successfully, update list
+                    runOnUiThread {
+                        logFileChange("File delete: $fileName")
                     }
                 },
                     onError = { error ->
