@@ -219,7 +219,7 @@ class MainActivity : AppCompatActivity() {
             }
         }.start()
     }
-    
+
     private fun stopMonitoring() {
         if (::fileObserver.isInitialized) {
             fileObserver.stopWatching()
@@ -271,10 +271,33 @@ class MainActivity : AppCompatActivity() {
                     runOnUiThread {
                         logFileChange("File uploaded: ${originalFile.name}")
                     }
+
+                    // Delete tempFile after upload success
+                    if (tempFile.exists()) {
+                        tempFile.delete()
+                        Log.d("FileUpload", "Temporary file deleted: ${tempFile.name}")
+                    }
+
+                    // Optionally, delete the encrypted file as well after successful upload
+                    if (encryptedFile.exists()) {
+                        encryptedFile.delete()
+                        Log.d("FileUpload", "Encrypted file deleted: ${encryptedFile.name}")
+                    }
                 },
                     onError = { error ->
                         runOnUiThread {
                             Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
+                        }
+                        // Delete tempFile after upload faild
+                        if (tempFile.exists()) {
+                            tempFile.delete()
+                            Log.d("FileUpload", "Temporary file deleted: ${tempFile.name}")
+                        }
+
+                        // Optionally, delete the encrypted file as well after fail upload
+                        if (encryptedFile.exists()) {
+                            encryptedFile.delete()
+                            Log.d("FileUpload", "Encrypted file deleted: ${encryptedFile.name}")
                         }
                     })
             } catch (e: Exception) {
